@@ -4,6 +4,28 @@ pragma solidity ^0.8.24;
 import "./interfaces/IOracle.sol";
 
 contract Agent {
+    mapping(uint => User) public users;
+
+    struct User {
+	uint256 userId;
+	string login;
+	Tweet[] tweets;
+    }
+
+    struct Tweet {
+	uint256 userId;
+	uint256 tweetId;
+	bool isCorrect;
+    }
+
+    struct AgentRun {
+        address owner;
+        IOracle.Message[] messages;
+        uint responsesCount;
+        uint8 max_iterations;
+        bool is_finished;
+    }
+
     // @notice Address of the contract owner
     address private owner;
 
@@ -71,5 +93,34 @@ contract Agent {
         } else {
             lastResponse = response;
         }
+    }
+
+    // Temporary functions for testing purposes
+    function temp_addUser(uint256 userId, string memory login) public {
+	require(users[userId].userId == 0, "User already exists");
+
+	User memory newUser = User({
+	    userId: userId,
+	    login: login,
+	    tweets: new Tweet[](0)
+	});
+
+	users[userId] = newUser;
+    }
+
+    function temp_addTweet(uint256 userId, uint256 tweetId, bool isCorrect) public {
+	require(users[userId].userId != 0, "User does not exist");
+
+	Tweet memory newTweet = Tweet({
+	    userId: userId,
+	    tweetId: tweetId,
+	    isCorrect: isCorrect
+	});
+	users[userId].tweets.push(newTweet);
+    }
+
+    function temp_getUserTweets(uint256 userId) public view returns (Tweet[] memory) {
+        require(users[userId].userId != 0, "User does not exist");
+        return users[userId].tweets;
     }
 }
