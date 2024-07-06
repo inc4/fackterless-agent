@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "./interfaces/IOracle.sol";
 
 contract Agent {
+    uint256[] private _userIds;
     mapping(uint => User) public users;
 
     struct User {
@@ -106,6 +107,7 @@ contract Agent {
 	});
 
 	users[userId] = newUser;
+	_userIds.push(userId);
     }
 
     function temp_addTweet(uint256 userId, uint256 tweetId, bool isCorrect) public {
@@ -122,5 +124,13 @@ contract Agent {
     function temp_getUserTweets(uint256 userId) public view returns (Tweet[] memory) {
         require(users[userId].userId != 0, "User does not exist");
         return users[userId].tweets;
+    }
+
+    function user(uint256 userId) public view returns (User memory) {
+	return users[userId];
+    }
+
+    function userIds() public view returns (uint256[] memory) {
+        return _userIds;
     }
 }
