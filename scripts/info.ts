@@ -16,6 +16,9 @@ async function main() {
   const runId = process.env.RUN_ID;
   const result = await contract.getAgentRun(runId);
   console.log(result);
+  console.log((await contract.getMessageHistory(runId))[0]);
+  //console.log((await contract.getUserByLogin("DaanCrypto")));
+  console.log((await contract.user("918138253617790976")));
 }
 
 main()

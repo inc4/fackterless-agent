@@ -134,6 +134,8 @@ contract Agent {
         string memory errorMessage
     ) public onlyOracle {
 	AgentRun storage run = agentRuns[runId];
+	run.responses.push(response);
+	run.errorMessage = errorMessage;
 	Tweet storage tweet = usersById[usersByLogin[run.twitterLogin]].tweets[run.lastStorageId];
 
 	string[] memory parts = split(response.content, "|");
@@ -148,8 +150,6 @@ contract Agent {
 	}
 	tweet.timeSpan = parts[3];
 
-	run.responses.push(response);
-	run.errorMessage = errorMessage;
 	run.iteration++;
     }
 
@@ -165,6 +165,8 @@ contract Agent {
 	"3. If there is a prediction, does it imply a price increase? (up: true/false)\n"
 	"4. Prediction duration. (time_span: seconds)\n"
 	"\n"
+        "Return the result in \"|\" cvs format.\n"
+	"\n"
 	"Example tweet:\n"
 	"\"I remember doing interviews about crypto in 2020 and asking people their bitcoin predictions. Bitcoin was at 8k at the time. One guy told me 40k this cycle. That number just blew my mind. At 8k it was impossible to comprehend those numbers. But we did it. Now when people say 200k for one bitcoin, I believe it.\"\n"
 	"\n"
@@ -174,7 +176,7 @@ contract Agent {
 	"Now analyze this tweet:\n";
         string memory code = string(abi.encodePacked(part1, tweet.text));
 	run.messages.push(createTextMessage("user", code));
-	IOracle(oracleAddress).createOpenAiLlmCall(agentCurrentId, config);
+	IOracle(oracleAddress).createOpenAiLlmCall(agentCurrentId-1, config);
     }
 
     function getMessageHistory(
@@ -195,6 +197,10 @@ contract Agent {
 
     function getAgentRun(uint runId) public view returns (AgentRun memory) {
 	return agentRuns[runId];
+    }
+
+    function getUserByLogin(string memory login) public view returns (string memory) {
+	return usersByLogin[login];
     }
 
     function user(string memory userId) public view returns (User memory) {
