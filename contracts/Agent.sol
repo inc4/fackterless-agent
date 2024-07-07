@@ -2,29 +2,39 @@
 pragma solidity ^0.8.24;
 
 import "./interfaces/IOracle.sol";
+import "./interfaces/IStorage.sol";
+import "hardhat/console.sol";
 
 contract Agent {
-    uint256[] private _userIds;
-    mapping(uint => User) public users;
+    string[] public _userIds;
+    mapping(string => User) public usersById;
+    mapping(string => string) public usersByLogin;
 
     struct User {
-	uint256 userId;
 	string login;
+	string userId;
 	Tweet[] tweets;
     }
 
     struct Tweet {
-	uint256 userId;
-	uint256 tweetId;
+	uint storageId;
+	string userId;
+	string tweetId;
 	bool isCorrect;
     }
 
+    uint private agentCurrentId;
+    mapping(uint => AgentRun) public agentRuns;
     struct AgentRun {
         address owner;
-        IOracle.Message[] messages;
-        uint responsesCount;
-        uint8 max_iterations;
-        bool is_finished;
+	IOracle.Message[] messages;
+	string twitterLogin;
+	uint lastStorageId;
+	string[] codeInterpreted;
+	IOracle.OpenAiResponse[] responses;
+        string errorMessage;
+        uint iteration;
+        bool isFinished;
     }
 
     // @notice Address of the contract owner
@@ -33,19 +43,36 @@ contract Agent {
     // @notice Address of the oracle contract
     address public oracleAddress;
 
-    // @notice Last response received from the oracle
-    string public lastResponse;
+    // @notice Address of the storage contract
+    address public storageAddress;
 
-    // @notice Counter for the number of calls made
-    uint private callsCount;
+    IOracle.OpenAiRequest private config;
 
     // @notice Event emitted when the oracle address is updated
     event OracleAddressUpdated(address indexed newOracleAddress);
 
+    event RunCreated(uint256 indexed runId, address indexed owner);
+
     // @param initialOracleAddress Initial address of the oracle contract
-    constructor(address initialOracleAddress) {
+    constructor(address initialOracleAddress, address initialStorageAddress) {
         owner = msg.sender;
         oracleAddress = initialOracleAddress;
+	storageAddress = initialStorageAddress;
+	config = IOracle.OpenAiRequest({
+            model : "gpt-4-turbo-preview",
+            frequencyPenalty : 21, // > 20 for null
+            logitBias : "", // empty str for null
+            maxTokens : 1000, // 0 for null
+            presencePenalty : 21, // > 20 for null
+            responseFormat : "{\"type\":\"text\"}",
+            seed : 0, // null
+            stop : "", // null
+            temperature : 10, // Example temperature (scaled up, 10 means 1.0), > 20 means null
+            topP : 101, // Percentage 0-100, > 100 means null
+            tools : "[{\"type\":\"function\",\"function\":{\"name\":\"web_search\",\"description\":\"Search the internet\",\"parameters\":{\"type\":\"object\",\"properties\":{\"query\":{\"type\":\"string\",\"description\":\"Search query\"}},\"required\":[\"query\"]}}},{\"type\":\"function\",\"function\":{\"name\":\"image_generation\",\"description\":\"Generates an image using Dalle-2\",\"parameters\":{\"type\":\"object\",\"properties\":{\"prompt\":{\"type\":\"string\",\"description\":\"Dalle-2 prompt to generate an image\"}},\"required\":[\"prompt\"]}}}]",
+            toolChoice : "auto", // "none" or "auto"
+            user : "" // null
+        });
     }
 
     // @notice Ensures the caller is the contract owner
@@ -67,70 +94,80 @@ contract Agent {
         emit OracleAddressUpdated(newOracleAddress);
     }
 
-    function runAgent() public returns (uint) {
-        uint currentId = callsCount;
-        callsCount = currentId + 1;
-
-        IOracle(oracleAddress).createFunctionCall(
-            currentId,
-            "code_interpreter",
-
-            "import requests;"
-	    "token = requests.get('http://157.230.22.0/token').text.strip();"
-	    "d = requests.get('https://api.twitter.com/2/users/by?usernames=alex', headers={'Authorization': 'Bearer '+token}).json();"
-	    "print(d['data'][0]['id']);"
-        );
-
-        return currentId;
+    // @notice Updates the storage address
+    // @param newStorageAddress The new storage address to set
+    function setStorageAddress(address newStorageAddress) public onlyOwner {
+        storageAddress = newStorageAddress;
     }
 
-    function onOracleFunctionResponse(
-        uint /*runId*/,
-        string memory response,
+    function runAgent(string memory twitterLogin) public returns (uint) {
+        AgentRun storage run = agentRuns[agentCurrentId];
+
+        run.owner = msg.sender;
+        run.twitterLogin = twitterLogin;
+
+        uint runId = agentCurrentId;
+        agentCurrentId++;
+
+	string memory userId = usersByLogin[twitterLogin];
+	if (keccak256(abi.encodePacked(userId)) == keccak256(abi.encodePacked(""))) {
+	    IStorage.User memory u = IStorage(storageAddress).getUserByLogin(twitterLogin);
+	    userId = u.id;
+	    usersById[u.id] = User(twitterLogin, userId, new Tweet[](0));
+	    usersByLogin[twitterLogin] = userId;
+	    run.lastStorageId = 0;
+	}
+	processTweet(runId);
+
+	emit RunCreated(runId, msg.sender);
+        return runId;
+    }
+
+    function onOracleOpenAiLlmResponse(
+        uint runId,
+        IOracle.OpenAiResponse memory response,
         string memory errorMessage
     ) public onlyOracle {
-        if (keccak256(abi.encodePacked(errorMessage)) != keccak256(abi.encodePacked(""))) {
-            lastResponse = errorMessage;
-        } else {
-            lastResponse = response;
-        }
+	AgentRun storage run = agentRuns[runId];
+
+	run.responses.push(response);
+	run.errorMessage = errorMessage;
+	run.iteration++;
     }
 
-    // Temporary functions for testing purposes
-    function temp_addUser(uint256 userId, string memory login) public {
-	require(users[userId].userId == 0, "User already exists");
-
-	User memory newUser = User({
-	    userId: userId,
-	    login: login,
-	    tweets: new Tweet[](0)
-	});
-
-	users[userId] = newUser;
-	_userIds.push(userId);
+    function processTweet(uint runId) private {
+	AgentRun storage run = agentRuns[runId];
+	// IStorage.Tweet memory tweet = IStorage(storageAddress).getTweet(run.twitterLogin, run.lastStorageId);
+	// TODO
+	run.messages.push(createTextMessage("user", "Hello, world!"));
+	IOracle(oracleAddress).createOpenAiLlmCall(runId, config);
     }
 
-    function temp_addTweet(uint256 userId, uint256 tweetId, bool isCorrect) public {
-	require(users[userId].userId != 0, "User does not exist");
-
-	Tweet memory newTweet = Tweet({
-	    userId: userId,
-	    tweetId: tweetId,
-	    isCorrect: isCorrect
-	});
-	users[userId].tweets.push(newTweet);
+    function getMessageHistory(
+        uint runId
+    ) public view returns (IOracle.Message[] memory) {
+	return agentRuns[runId].messages;
     }
 
-    function temp_getUserTweets(uint256 userId) public view returns (Tweet[] memory) {
-        require(users[userId].userId != 0, "User does not exist");
-        return users[userId].tweets;
+    function createTextMessage(string memory role, string memory content) private pure returns (IOracle.Message memory) {
+        IOracle.Message memory newMessage = IOracle.Message({
+            role: role,
+            content: new IOracle.Content[](1)
+        });
+        newMessage.content[0].contentType = "text";
+        newMessage.content[0].value = content;
+        return newMessage;
     }
 
-    function user(uint256 userId) public view returns (User memory) {
-	return users[userId];
+    function getAgentRun(uint runId) public view returns (AgentRun memory) {
+	return agentRuns[runId];
     }
 
-    function userIds() public view returns (uint256[] memory) {
+    function user(string memory userId) public view returns (User memory) {
+	return usersById[userId];
+    }
+
+    function userIds() public view returns (string[] memory) {
         return _userIds;
     }
 }
