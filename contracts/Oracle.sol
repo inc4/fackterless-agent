@@ -2,7 +2,7 @@
 pragma solidity ^0.8.13;
 
 // Uncomment this line to use console.log
-// import "hardhat/console.sol";
+import "hardhat/console.sol";
 import "./interfaces/IChatGpt.sol";
 import "./interfaces/IOracle.sol";
 

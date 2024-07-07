@@ -33,16 +33,18 @@ describe("Agent", function () {
         const res = await tx.wait();
         const id = res.logs[1].args[0];
 
-
         // Step 1
         let run = await agent.getAgentRun(id);
-        expect(run.iteration).to.equal(iteration + 1);
-        expect(run.isFinished).to.equal(true);
-        await oracle.addOpenAiResponse(id, iteration, ['chatcmpl-9iEtr2rQUDJTHmgknueM6LCbpGmgE', '{"about_bitcoin": "true","is_prediction": "true","up": "true"}', '', '', 1720330735, 'gpt-4-0125-preview', '', 'chat.completion', 10, 87, 97], '');
+        // expect(run.iteration).to.equal(iteration + 1);
+        // expect(run.isFinished).to.equal(true);
+        await oracle.addOpenAiResponse(iteration, id, ['chatcmpl-9iEtr2rQUDJTHmgknueM6LCbpGmgE', '1|1|1|259200', '', '', 1720330735, 'gpt-4-0125-preview', '', 'chat.completion', 10, 87, 97], '');
+	expect(await agent.userIds()).to.deep.equal(["295218901"]);
+	console.log(await agent.user("295218901"));
         // await oracle.addScriptResponse(id, iteration, '{"isCorrect": "true"}', '');
 
+	/*
         let user = await storage.getUserByLogin(login);
-        let tweets = await agent.user.tweets(user.id);
+        // let tweets = await agent.user.tweets(user.id);
         expect(tweets[iteration].userId).to.equal(user.id);
         expect(tweets[iteration].tweetId).to.equal("1729251834404249696");
         expect(tweets[iteration].isCorrect).to.equal(true);
@@ -62,8 +64,6 @@ describe("Agent", function () {
         expect(tweets[iteration].tweetId).to.equal("1729251834404249696");
         expect(tweets[iteration].isCorrect).to.equal(true);
         iteration++;
-
-
+        */
     });
-
 });

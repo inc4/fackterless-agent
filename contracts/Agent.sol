@@ -20,6 +20,10 @@ contract Agent {
 	uint storageId;
 	string userId;
 	string tweetId;
+	bool isBitcoin;
+	bool isPrediction;
+	bool isUp;
+	string timeSpan;
 	bool isCorrect;
     }
 
@@ -115,6 +119,7 @@ contract Agent {
 	    userId = u.id;
 	    usersById[u.id] = User(twitterLogin, userId, new Tweet[](0));
 	    usersByLogin[twitterLogin] = userId;
+	    _userIds.push(userId);
 	    run.lastStorageId = 0;
 	}
 	processTweet(runId);
@@ -129,6 +134,19 @@ contract Agent {
         string memory errorMessage
     ) public onlyOracle {
 	AgentRun storage run = agentRuns[runId];
+	Tweet storage tweet = usersById[usersByLogin[run.twitterLogin]].tweets[run.lastStorageId];
+
+	string[] memory parts = split(response.content, "|");
+	if (keccak256(abi.encodePacked(parts[0])) == keccak256(abi.encodePacked("1"))) {
+	    tweet.isBitcoin = true;
+	}
+	if (keccak256(abi.encodePacked(parts[1])) == keccak256(abi.encodePacked("1"))) {
+	    tweet.isPrediction = true;
+	}
+	if (keccak256(abi.encodePacked(parts[2])) == keccak256(abi.encodePacked("1"))) {
+	    tweet.isUp = true;
+	}
+	tweet.timeSpan = parts[3];
 
 	run.responses.push(response);
 	run.errorMessage = errorMessage;
@@ -137,10 +155,26 @@ contract Agent {
 
     function processTweet(uint runId) private {
 	AgentRun storage run = agentRuns[runId];
-	// IStorage.Tweet memory tweet = IStorage(storageAddress).getTweet(run.twitterLogin, run.lastStorageId);
-	// TODO
-	run.messages.push(createTextMessage("user", "Hello, world!"));
-	IOracle(oracleAddress).createOpenAiLlmCall(runId, config);
+	User storage user = usersById[usersByLogin[run.twitterLogin]];
+	IStorage.Tweet memory tweet = IStorage(storageAddress).getTweet(run.twitterLogin, run.lastStorageId);
+	user.tweets.push(Tweet(run.lastStorageId, tweet.userId, tweet.tweetId, false, false, false, "", false));
+	string memory part1 =
+	"Analyze the following tweet text and determine 4 parameters:\n"
+	"1. Is it about Bitcoin? (about_bitcoin: true/false)\n"
+	"2. Does the text contain a price prediction or? (is_prediction: true/false)\n"
+	"3. If there is a prediction, does it imply a price increase? (up: true/false)\n"
+	"4. Prediction duration. (time_span: seconds)\n"
+	"\n"
+	"Example tweet:\n"
+	"\"I remember doing interviews about crypto in 2020 and asking people their bitcoin predictions. Bitcoin was at 8k at the time. One guy told me 40k this cycle. That number just blew my mind. At 8k it was impossible to comprehend those numbers. But we did it. Now when people say 200k for one bitcoin, I believe it.\"\n"
+	"\n"
+	"Response, contains \"about_bitcoin\",\"is_prediction\",\"up\",\"time_span\":\n"
+	"true|true|true|259200\n"
+	"\n"
+	"Now analyze this tweet:\n";
+        string memory code = string(abi.encodePacked(part1, tweet.text));
+	run.messages.push(createTextMessage("user", code));
+	IOracle(oracleAddress).createOpenAiLlmCall(agentCurrentId, config);
     }
 
     function getMessageHistory(
@@ -169,5 +203,36 @@ contract Agent {
 
     function userIds() public view returns (string[] memory) {
         return _userIds;
+    }
+
+    function split(string memory _base, string memory _value) internal pure returns (string[] memory splitArr) {
+        bytes memory _baseBytes = bytes(_base);
+        uint _offset = 0;
+        uint _splitsCount = 1;
+        for (uint i = 0; i < _baseBytes.length; i++) {
+            if (_baseBytes[i] == bytes(_value)[0]) {
+                _splitsCount++;
+            }
+        }
+        splitArr = new string[](_splitsCount);
+        uint _splitIndex = 0;
+        for (uint i = 0; i < _baseBytes.length; i++) {
+            if (_baseBytes[i] == bytes(_value)[0]) {
+                splitArr[_splitIndex] = substring(_base, _offset, i);
+                _offset = i + 1;
+                _splitIndex++;
+            }
+        }
+        splitArr[_splitIndex] = substring(_base, _offset, _baseBytes.length);
+        return splitArr;
+    }
+
+        function substring(string memory str, uint startIndex, uint endIndex) internal pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        bytes memory result = new bytes(endIndex - startIndex);
+        for (uint i = startIndex; i < endIndex; i++) {
+            result[i - startIndex] = strBytes[i];
+        }
+        return string(result);
     }
 }
